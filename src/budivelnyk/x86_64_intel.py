@@ -1,10 +1,7 @@
 from typing import Iterator
 
-from .intermediate import (
-    Node, Loop,
-    Increment, Decrement, MoveForward, MoveBack, Output, Input,
-    Add, Subtract, MoveForwardBy, MoveBackBy, MultipleOutput, MultipleInput
-)
+from .intermediate import Node, Loop, Add, Move, Output, Input
+
 
 def generate_x86_64_intel(intermediate: list[Node]) -> Iterator[str]:
     yield from _generate_prologue()
@@ -24,39 +21,43 @@ def _generate_body(intermediate: list[Node], parent_label: str='') -> Iterator[s
     loop_id = 0
     for node in intermediate:
         match node:
-            case Increment():      yield  '    inc   byte ptr [rdi]'
-            case Decrement():      yield  '    dec   byte ptr [rdi]'
-            case Add(n):           yield f'    add   byte ptr [rdi], {n}'
-            case Subtract(n):      yield f'    sub   byte ptr [rdi], {n}'
-            case MoveForward():    yield  '    inc   rdi'
-            case MoveBack():       yield  '    dec   rdi'
-            case MoveForwardBy(n): yield f'    add   rdi, {n}'
-            case MoveBackBy(n):    yield f'    sub   rdi, {n}'
-            case Output():
+            case Add(n):
+                if n == 1:
+                    yield '    inc   byte ptr [rdi]'
+                elif n == -1:
+                    yield '    dec   byte ptr [rdi]'
+                elif n > 1:
+                    yield f'    add   byte ptr [rdi], {n}'
+                elif n < 1:
+                    yield f'    sub   byte ptr [rdi], {-n}'
+            
+            case Move(n):
+                if n == 1:
+                    yield '    inc   rdi'
+                elif n == -1:
+                    yield '    dec   rdi'
+                elif n > 1:
+                    yield f'    add   rdi, {n}'
+                elif n < 1:
+                    yield f'    sub   rdi, {-n}'
+            
+            case Output(n):
                 yield '    push  rdi'
                 yield '    movzx rdi, byte ptr [rdi]'
-                yield '    call  putchar'
-                yield '    pop   rdi'
-            case Input():
-                yield '    push  rdi'
-                yield '    call  getchar'
-                yield '    pop   rdi'
-                yield '    mov   byte ptr [rdi], al'
-            case MultipleOutput(count):
-                yield '    push  rdi'
-                yield '    movzx rdi, byte ptr [rdi]'
-                sequence = ['    call  putchar', '    mov   rdi, rax'] * count
+                sequence = ['    call  putchar', '    mov   rdi, rax'] * n
                 yield from sequence[:-1]
                 yield '    pop   rdi'
-            case MultipleInput(count):
+            
+            case Input(n):
                 yield '    push  rdi'
-                yield from ['    call  getchar'] * count
+                yield from ['    call  getchar'] * n
                 yield '    pop   rdi'
                 yield '    mov   byte ptr [rdi], al'
+            
             case Loop(body):
                 label = f'{parent_label}_{loop_id}'
                 yield f'start{label}:'
-                yield  '    cmp   byte ptr [rdi], 0'
+                yield '    cmp   byte ptr [rdi], 0'
                 yield f'    je    end{label}'
                 yield from _generate_body(body, label)
                 yield f'    jmp   start{label}'

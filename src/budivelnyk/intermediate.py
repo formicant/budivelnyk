@@ -1,4 +1,4 @@
-from typing import Iterable, Callable
+from typing import Iterable, Callable, cast
 from dataclasses import dataclass
 from itertools import groupby
 
@@ -13,76 +13,42 @@ class Command(Node):
     """ Any leaf node. """
     pass
 
-
-# BF commands
-
 @dataclass
-class Increment(Command):
-    """ Increment current cell's value. """
-    pass
+class AdditiveCommand(Command):
+    """ Command with an integer argument `n`.
+        Consecutive commands of the same type can be merged
+        into a single command with the argument equal
+        to the sum of the arguments of the original commands.
+    """
+    n: int
 
-@dataclass
-class Decrement(Command):
-    """ Decrement current cell's value. """
-    pass
 
-@dataclass
-class MoveForward(Command):
-    """ Increment cell pointer. """
-    pass
-
-@dataclass
-class MoveBack(Command):
-    """ Decrement cell pointer. """
-    pass
-
-@dataclass
-class Output(Command):
-    """ Output current cell's value. """
-    pass
-
-@dataclass
-class Input(Command):
-    """ Store input value in current cell. """
-    pass
+# Node types
 
 @dataclass
 class Loop(Node):
     """ While current cell's value is non-zero, repeat loop's body. """
     body: list[Node]
 
-
-# Optimization commands
-
 @dataclass
-class Add(Command):
+class Add(AdditiveCommand):
     """ Add constant to current cell's value. """
-    constant: int
+    pass
 
 @dataclass
-class Subtract(Command):
-    """ Subtract constant from current cell's value. """
-    constant: int
-
-@dataclass
-class MoveForwardBy(Command):
+class Move(AdditiveCommand):
     """ Add constant to cell pointer. """
-    constant: int
+    pass
 
 @dataclass
-class MoveBackBy(Command):
-    """ Subtract constant from cell pointer. """
-    constant: int
+class Output(AdditiveCommand):
+    """ Output current cell's value. """
+    pass
 
 @dataclass
-class MultipleOutput(Command):
-    """ Output current cell's value multiple times. """
-    count: int
-
-@dataclass
-class MultipleInput(Command):
-    """ Get multiple input values and store the last one in current cell. """
-    count: int
+class Input(AdditiveCommand):
+    """ Store input value in current cell. """
+    pass
 
 
 # Optimizations
@@ -91,23 +57,15 @@ Optimization = Callable[[list[Node]], list[Node]]
 
 def same_command_sequence_optimization(intermediate: list[Node]) -> list[Node]:
     result: list[Node] = []
-    for (_, g) in groupby(intermediate, lambda node: type(node)):
+    for (group_type, g) in groupby(intermediate, type):
         group = list(g)
-        count = len(group)
         match group[0]:
-            case Increment() if count > 1:
-                result.append(Add(count))
-            case Decrement() if count > 1:
-                result.append(Subtract(count))
-            case MoveForward() if count > 1:
-                result.append(MoveForwardBy(count))
-            case MoveBack() if count > 1:
-                result.append(MoveBackBy(count))
-            case Output() if count > 1:
-                result.append(MultipleOutput(count))
-            case Input() if count > 1:
-                result.append(MultipleInput(count))
+            case AdditiveCommand(_):
+                # merge consecutive additive commands
+                n = sum(cast(AdditiveCommand, ac).n for ac in group)
+                result.append(group_type(n))
             case Loop(body):
+                # only the first of consecutive loops can be executed
                 optimized_body = same_command_sequence_optimization(body)
                 result.append(Loop(optimized_body))
             case _:
@@ -130,12 +88,12 @@ def bf_to_intermediate(bf_code: str, optimizations: list[Optimization]|None=None
 def _bf_sequence_to_intermediate(sequence: Iterable[str], expect_closing_bracket: bool) -> Iterable[Node]:
     for char in sequence:
         match char:
-            case '+': yield Increment()
-            case '-': yield Decrement()
-            case '>': yield MoveForward()
-            case '<': yield MoveBack()
-            case '.': yield Output()
-            case ',': yield Input()
+            case '+': yield Add(1)
+            case '-': yield Add(-1)
+            case '>': yield Move(1)
+            case '<': yield Move(-1)
+            case '.': yield Output(1)
+            case ',': yield Input(1)
             case '[':
                 body = _bf_sequence_to_intermediate(sequence, expect_closing_bracket=True)
                 yield Loop(list(body))
